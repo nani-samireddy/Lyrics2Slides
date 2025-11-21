@@ -1,5 +1,7 @@
 {
   "name": "Lyrics formatter",
   "description": "AI-powered tool to clean and format Telugu Christian song lyrics for presentation slides.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "clipboard-read"
+  ]
 }

@@ -3,6 +3,7 @@ import { Button } from './components/Button';
 import { OutputCard } from './components/OutputCard';
 import { formatLyricsWithGemini } from './services/geminiService';
 import { cleanLyricsDeterministically } from './utils/lyricsCleaner';
+import { generateAndDownloadPPT } from './utils/pptGenerator';
 import { AppStatus } from './types';
 import { DEFAULT_PLACEHOLDER } from './constants';
 
@@ -13,12 +14,34 @@ const App: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [activeMode, setActiveMode] = useState<'ai' | 'manual' | null>(null);
   const [isCopied, setIsCopied] = useState(false);
+  const [isGeneratingPPT, setIsGeneratingPPT] = useState(false);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setRawInput(e.target.value);
     if (status === AppStatus.SUCCESS || status === AppStatus.ERROR) {
       setStatus(AppStatus.IDLE);
       setActiveMode(null);
+    }
+  };
+
+  const handlePaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      setRawInput(text);
+      // Reset status if we paste new content
+      if (status === AppStatus.SUCCESS) {
+        setStatus(AppStatus.IDLE);
+        setActiveMode(null);
+      }
+    } catch (err: any) {
+      console.error('Failed to read clipboard:', err);
+      // If blocked by policy or user denial, suggest manual shortcut
+      if (err.name === 'NotAllowedError' || err.message.includes('permissions policy')) {
+         setErrorMsg("Clipboard access blocked. Use Ctrl+V to paste.");
+      } else {
+         setErrorMsg("Failed to paste from clipboard.");
+      }
+      setTimeout(() => setErrorMsg(null), 4000);
     }
   };
 
@@ -66,6 +89,20 @@ const App: React.FC = () => {
     }
   };
 
+  const handleDownloadPPT = async () => {
+    if (!formattedOutput) return;
+    setIsGeneratingPPT(true);
+    try {
+      await generateAndDownloadPPT(formattedOutput);
+    } catch (err) {
+      console.error(err);
+      setErrorMsg("Failed to generate PPT.");
+      setTimeout(() => setErrorMsg(null), 3000);
+    } finally {
+      setIsGeneratingPPT(false);
+    }
+  };
+
   const handleReset = () => {
     setRawInput('');
     setFormattedOutput('');
@@ -78,9 +115,12 @@ const App: React.FC = () => {
         
       {/* Left Pane: Input */}
       <div className="flex-1 relative h-1/2 md:h-full">
-        <div className="absolute top-6 left-6 md:top-8 md:left-8 text-[10px] font-bold text-zinc-400 uppercase tracking-[0.2em] pointer-events-none select-none z-10">
-          Input Source
+        <div className="absolute top-6 left-6 md:top-8 md:left-8 flex items-center gap-3 z-10">
+            <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.2em] pointer-events-none select-none">
+                Input Source
+            </div>
         </div>
+        
         <textarea
           className="w-full h-full p-8 md:p-12 pt-16 md:pt-20 text-lg md:text-xl resize-none focus:outline-none placeholder:text-transparent text-zinc-900 leading-relaxed telugu-text bg-transparent custom-scrollbar"
           placeholder="Paste lyrics here..."
@@ -142,6 +182,19 @@ const App: React.FC = () => {
             </svg>
           </Button>
 
+          {/* Paste Button */}
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={handlePaste}
+            className="!rounded-full !w-10 !h-10 !p-0 flex items-center justify-center hover:bg-zinc-100 hover:!text-zinc-900 transition-colors"
+            title="Paste from Clipboard"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+          </Button>
+
           <div className="w-px h-4 bg-zinc-200 mx-1"></div>
 
           {/* Actions */}
@@ -167,26 +220,45 @@ const App: React.FC = () => {
             AI Format
           </Button>
 
-          {/* Copy (Conditional) */}
+          {/* Copy & PPT (Conditional) */}
           {formattedOutput && (
             <>
               <div className="w-px h-4 bg-zinc-200 mx-1"></div>
+              
+              {/* Copy */}
               <Button 
                 variant={isCopied ? "secondary" : "ghost"}
                 size="sm"
                 onClick={handleCopy}
-                className={`!rounded-full !px-5 transition-all ${isCopied ? '!bg-emerald-50 !text-emerald-600 !border-emerald-100' : 'hover:bg-zinc-100'}`}
+                title="Copy to Clipboard"
+                className={`!rounded-full !px-4 transition-all ${isCopied ? '!bg-emerald-50 !text-emerald-600 !border-emerald-100' : 'hover:bg-zinc-100'}`}
               >
                  {isCopied ? (
-                    <span className="text-[10px] font-bold uppercase tracking-widest">Copied</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
                  ) : (
-                    <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold uppercase tracking-widest">Copy</span>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                        </svg>
-                    </div>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
                  )}
+              </Button>
+
+              {/* PPT Download */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleDownloadPPT}
+                isLoading={isGeneratingPPT}
+                title="Download PowerPoint"
+                className="!rounded-full !px-4 hover:bg-zinc-100"
+              >
+                <div className="flex items-center gap-2">
+                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                   </svg>
+                   <span className="text-[10px] font-bold uppercase tracking-widest">PPT</span>
+                </div>
               </Button>
             </>
           )}
